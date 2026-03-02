@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+body {
+  background-color: var(--color-gray-100);
+  /* fallback if variables not yet set by v4 theme, but standard resets usually apply. 
+     v4 uses theme() or simply CSS variables. Let's stick to standard CSS for custom overrides 
+     or use @theme if needed. For now, simple import is the v4 way. */
+}
