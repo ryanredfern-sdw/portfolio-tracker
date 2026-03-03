@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getPortfolioPerformance } from '../api';
+import { getPortfolioPerformance, logout } from '../api';
 import ModelBuilder from '../components/ModelBuilder';
 import PortfolioList from '../components/PortfolioList';
 import MetricCard from '../components/MetricCard';
@@ -46,6 +46,13 @@ const Dashboard = () => {
                 <h1 className="text-3xl font-bold leading-tight text-gray-900">Portfolio UPI Tracker</h1>
 
                 <div className="flex items-center gap-4">
+                    {/* Logout */}
+                    <button
+                        onClick={logout}
+                        className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                        Sign Out
+                    </button>
                     {/* Tabs */}
                     <div className="bg-gray-100 p-1 rounded-lg flex whitespace-nowrap">
                         <button

@@ -6,9 +6,6 @@ export default defineConfig({
   // …any other Vite options you already have…
 
   preview: {
-    // Allow any Render domain for this service
-    allowedHosts: ['*.onrender.com'],
-    // or, if you prefer the exact host:
-    // allowedHosts: ['portfolio-frontend-xxrb.onrender.com'],
+    allowedHosts: true,
   },
 });

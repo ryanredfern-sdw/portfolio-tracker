@@ -8,3 +8,6 @@ numpy
 python-multipart
 httpx
 requests
+python-jose[cryptography]
+passlib[bcrypt]
+python-dotenv

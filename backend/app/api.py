@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from . import models, services
 from .database import get_db
+from .auth import get_current_user, UserDB
 from typing import List, Dict
 
 router = APIRouter()
@@ -12,7 +13,7 @@ def health_check():
     return {"status": "ok", "db_path": str(DB_PATH)}
 
 @router.post("/portfolios/", response_model=models.PortfolioResponse)
-def create_portfolio(portfolio: models.PortfolioCreate, db: Session = Depends(get_db)):
+def create_portfolio(portfolio: models.PortfolioCreate, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     try:
         # Sanitize tickers in allocations
         sanitized_allocations = {k.replace('$', '').strip().upper(): v for k, v in portfolio.allocations.items()}
@@ -33,12 +34,12 @@ def create_portfolio(portfolio: models.PortfolioCreate, db: Session = Depends(ge
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/portfolios/", response_model=List[models.PortfolioResponse])
-def read_portfolios(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_portfolios(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     portfolios = db.query(models.PortfolioDB).offset(skip).limit(limit).all()
     return portfolios
 
 @router.put("/portfolios/{portfolio_id}", response_model=models.PortfolioResponse)
-def update_portfolio(portfolio_id: int, portfolio_update: models.PortfolioUpdate, db: Session = Depends(get_db)):
+def update_portfolio(portfolio_id: int, portfolio_update: models.PortfolioUpdate, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     db_portfolio = db.query(models.PortfolioDB).filter(models.PortfolioDB.id == portfolio_id).first()
     if not db_portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -61,7 +62,7 @@ def update_portfolio(portfolio_id: int, portfolio_update: models.PortfolioUpdate
     return db_portfolio
 
 @router.delete("/portfolios/{portfolio_id}")
-def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
+def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     db_portfolio = db.query(models.PortfolioDB).filter(models.PortfolioDB.id == portfolio_id).first()
     if not db_portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -71,7 +72,7 @@ def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
     return {"status": "deleted", "id": portfolio_id}
 
 @router.get("/portfolios/{portfolio_id}/performance")
-def get_portfolio_performance(portfolio_id: int, period: str = "2y", db: Session = Depends(get_db)):
+def get_portfolio_performance(portfolio_id: int, period: str = "2y", db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     portfolio = db.query(models.PortfolioDB).filter(models.PortfolioDB.id == portfolio_id).first()
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -116,7 +117,7 @@ def get_portfolio_performance(portfolio_id: int, period: str = "2y", db: Session
     }
 
 @router.get("/portfolios/compare")
-def compare_portfolios(period: str = "2y", db: Session = Depends(get_db)):
+def compare_portfolios(period: str = "2y", db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     portfolios = db.query(models.PortfolioDB).all()
     results = []
     
@@ -158,13 +159,13 @@ def compare_portfolios(period: str = "2y", db: Session = Depends(get_db)):
     return results
 
 @router.get("/tickers/summary")
-def get_tickers_summary(db: Session = Depends(get_db)):
+def get_tickers_summary(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     portfolios = db.query(models.PortfolioDB).all()
     summary = services.get_all_tickers_summary(portfolios)
     return summary
 
 @router.get("/tickers/{ticker}")
-def check_ticker(ticker: str):
+def check_ticker(ticker: str, current_user: UserDB = Depends(get_current_user)):
     df = services.fetch_ticker_data(ticker, period="1mo")
     if df.empty:
         raise HTTPException(status_code=404, detail="Ticker not found")
