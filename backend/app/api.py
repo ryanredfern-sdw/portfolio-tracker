@@ -81,7 +81,7 @@ def get_portfolio_performance(portfolio_id: int, period: str = "2y", db: Session
     history = portfolio.history if portfolio.history else []
     
     # Ensure history is list of dicts (it should be from JSON column)
-    returns_df, metadata = services.calculate_portfolio_returns(portfolio.allocations, period=period, history=history)
+    returns_df, metadata = services.calculate_portfolio_returns(portfolio.allocations, period=period, history=history, db=db)
     
     if returns_df.empty:
          # raise HTTPException(status_code=400, detail="Could not calculate returns (no data)")
@@ -125,7 +125,7 @@ def compare_portfolios(period: str = "2y", db: Session = Depends(get_db), curren
         try:
             history = p.history if p.history else []
             # Calculate returns
-            returns_df, metadata = services.calculate_portfolio_returns(p.allocations, period=period, history=history)
+            returns_df, metadata = services.calculate_portfolio_returns(p.allocations, period=period, history=history, db=db)
             if returns_df.empty:
                 continue
                 

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from . import models, api, auth
+from . import models, api, auth, cache
 from .database import engine, SessionLocal
 
 # Create all tables (including users table from auth)

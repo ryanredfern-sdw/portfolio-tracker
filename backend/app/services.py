@@ -7,6 +7,12 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional
 from functools import lru_cache
 import logging
+from sqlalchemy.orm import Session
+
+# Cache imports (lazy to avoid circular imports)
+def _get_cache_module():
+    from . import cache
+    return cache
 
 # In a real app, use os.getenv("ALPHAVANTAGE_API_KEY")
 # For this demo/playground, we'll use the provided key as default if env var is missing
@@ -120,15 +126,12 @@ def fetch_ticker_data_av(ticker: str, outputsize: str = "full") -> pd.DataFrame:
 @lru_cache(maxsize=128)
 def fetch_ticker_data(ticker: str, period: str = "5y", start: str = None, end: str = None, provider: str = os.getenv("DATA_PROVIDER", "yfinance")) -> pd.DataFrame:
     """
-    Fetch historical data for a ticker.
+    Fetch historical data for a ticker (no DB cache, uses lru_cache only).
     Supports 'yfinance' (default) and 'av' (Alpha Vantage).
     """
     if provider == "av":
-        # Alpha Vantage doesn't support "period" naturally (it's compact=100 or full=20+ years)
-        # We fetch full (since we have paid plan) and filter by date if needed.
         df = fetch_ticker_data_av(ticker, outputsize="full")
         
-        # Basic filtering to match 'period' roughly if needed
         if not df.empty and period:
             end_date = datetime.now()
             start_date = None
@@ -157,19 +160,65 @@ def fetch_ticker_data(ticker: str, period: str = "5y", start: str = None, end: s
     # Default to yfinance
     try:
         ticker_obj = yf.Ticker(ticker)
-        # period="max" is allowed
-        # auto_adjust=True ensures 'Close' is adjusted for splits/dividends
         df = ticker_obj.history(period=period, start=start, end=end, auto_adjust=True)
         return df
     except Exception as e:
         logger.error(f"Error fetching data for {ticker} from yfinance: {e}")
         return pd.DataFrame()
 
+
+def fetch_ticker_data_cached(ticker: str, db: Session, period: str = "5y") -> pd.DataFrame:
+    """
+    Cache-aware fetch: check DB first, only fetch new data from yfinance.
+    Falls back to non-cached fetch if DB is unavailable.
+    """
+    try:
+        cache = _get_cache_module()
+        
+        # Check what we have cached
+        last_cached = cache.get_last_cached_date(db, ticker)
+        
+        if last_cached:
+            # We have cached data — only fetch the delta
+            # Fetch from 2 days before last cached date to handle adjustments
+            fetch_start = (last_cached - timedelta(days=2)).strftime("%Y-%m-%d")
+            today = datetime.now().strftime("%Y-%m-%d")
+            
+            try:
+                ticker_obj = yf.Ticker(ticker)
+                new_data = ticker_obj.history(start=fetch_start, end=today, auto_adjust=True)
+                
+                if not new_data.empty:
+                    cache.update_cache(db, ticker, new_data)
+            except Exception as e:
+                logger.warning(f"Delta fetch failed for {ticker}, using cached data: {e}")
+            
+            # Return all cached data
+            df = cache.get_cached_prices(db, ticker)
+            return df
+        else:
+            # No cache — fetch full history from yfinance
+            try:
+                ticker_obj = yf.Ticker(ticker)
+                df = ticker_obj.history(period=period, auto_adjust=True)
+                
+                if not df.empty:
+                    cache.update_cache(db, ticker, df)
+                    logger.info(f"Cached {len(df)} rows for {ticker} (first fetch)")
+                
+                return df
+            except Exception as e:
+                logger.error(f"Error fetching {ticker} from yfinance: {e}")
+                return pd.DataFrame()
+    except Exception as e:
+        logger.warning(f"Cache unavailable, falling back to direct fetch: {e}")
+        return fetch_ticker_data(ticker, period=period)
+
 def calculate_daily_returns(df: pd.DataFrame) -> pd.Series:
     """Calculate daily percentage change."""
     return df['Close'].pct_change().dropna()
 
-def calculate_portfolio_returns(allocations: Dict[str, float], period: str = "2y", history: List[Dict] = None) -> pd.DataFrame:
+def calculate_portfolio_returns(allocations: Dict[str, float], period: str = "2y", history: List[Dict] = None, db: Session = None) -> pd.DataFrame:
     """
     Calculate composite daily returns for a portfolio.
     Supports historical rebalancing if 'history' is provided.
@@ -230,7 +279,10 @@ def calculate_portfolio_returns(allocations: Dict[str, float], period: str = "2y
 
     # 2. Fetch Data
     for ticker in tickers:
-        df = fetch_ticker_data(ticker, period=fetch_period, start=start_date, end=end_date)
+        if db is not None:
+            df = fetch_ticker_data_cached(ticker, db, period=fetch_period or "5y")
+        else:
+            df = fetch_ticker_data(ticker, period=fetch_period, start=start_date, end=end_date)
         if df.empty:
             continue
         df = df.rename(columns={'Close': ticker})
